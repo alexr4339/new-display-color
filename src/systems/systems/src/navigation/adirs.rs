@@ -3,7 +3,10 @@ use crate::{
     overhead::{IndicationLight, OnOffFaultPushButton},
     shared::{
         arinc429::{Arinc429Word, SignStatus},
-        GroundSpeed, MachNumber,
+        MachNumber,
+        AirDataSource,
+        GroundSpeed,
+
     },
     simulation::{
         Read, Reader, SimulationElement, SimulationElementVisitor, SimulatorReader,
@@ -364,6 +367,10 @@ impl AirDataInertialReferenceSystem {
     fn ir_has_fault(&self, number: usize) -> bool {
         self.adirus[number - 1].ir_has_fault()
     }
+
+    pub fn adirus(&self, n: usize) -> &AirDataInertialReferenceUnit {
+        &self.adirus[n]
+    }
 }
 impl SimulationElement for AirDataInertialReferenceSystem {
     fn accept<T: SimulationElementVisitor>(&mut self, visitor: &mut T) {
@@ -394,7 +401,7 @@ impl GroundSpeed for AirDataInertialReferenceSystem {
     }
 }
 
-struct AirDataInertialReferenceUnit {
+pub struct AirDataInertialReferenceUnit {
     state_id: VariableIdentifier,
 
     adr: AirDataReference,
@@ -450,6 +457,14 @@ impl AirDataInertialReferenceUnit {
     fn ir_has_fault(&self) -> bool {
         self.ir.has_fault()
     }
+
+    pub fn computed_airspeed(&self) -> Arinc429Word<Velocity> {
+        self.adr.computed_airspeed()
+    }
+
+    pub fn alpha(&self) -> Arinc429Word<Angle> {
+        self.adr.alpha()
+    }
 }
 impl SimulationElement for AirDataInertialReferenceUnit {
     fn accept<T: SimulationElementVisitor>(&mut self, visitor: &mut T) {
@@ -469,11 +484,13 @@ impl GroundSpeed for AirDataInertialReferenceUnit {
     }
 }
 
+#[derive(Clone,Copy)]
 struct AdirsData<T> {
     id: VariableIdentifier,
     value: T,
     ssm: SignStatus,
 }
+
 impl<T: Copy + Default> AdirsData<T> {
     fn new_adr(context: &mut InitContext, number: usize, name: &str) -> Self {
         Self::new(context, OutputDataType::Adr, number, name)
@@ -536,6 +553,14 @@ trait TrueAirspeedSource {
     fn true_airspeed(&self) -> Arinc429Word<Velocity>;
 }
 
+trait ComputedAirspeedSource {
+    fn computed_airspeed(&self) -> Arinc429Word<Velocity>;
+}
+
+trait AlphaSource {
+    fn alpha(&self) -> Arinc429Word<Angle>;
+}
+
 struct AirDataReference {
     number: usize,
     is_on: bool,
@@ -549,6 +574,7 @@ struct AirDataReference {
     static_air_temperature: AdirsData<ThermodynamicTemperature>,
     total_air_temperature: AdirsData<ThermodynamicTemperature>,
     international_standard_atmosphere_delta: AdirsData<ThermodynamicTemperature>,
+    alpha: AdirsData<Angle>,
 
     remaining_initialisation_duration: Option<Duration>,
 }
@@ -563,6 +589,8 @@ impl AirDataReference {
     const TOTAL_AIR_TEMPERATURE: &'static str = "TOTAL_AIR_TEMPERATURE";
     const INTERNATIONAL_STANDARD_ATMOSPHERE_DELTA: &'static str =
         "INTERNATIONAL_STANDARD_ATMOSPHERE_DELTA";
+    const CORRECTED_AOA: &'static str = "CORRECTED_ANGLE_OF_ATTACK";
+
     const MINIMUM_COMPUTED_AIRSPEED_FOR_TRUE_AIRSPEED_DETERMINATION_KNOTS: f64 = 60.;
 
     fn new(context: &mut InitContext, number: usize, outputs_temperatures: bool) -> Self {
@@ -591,6 +619,7 @@ impl AirDataReference {
                 number,
                 Self::INTERNATIONAL_STANDARD_ATMOSPHERE_DELTA,
             ),
+            alpha: AdirsData::new_adr(context, number, Self::CORRECTED_AOA),
 
             // Start fully initialised.
             remaining_initialisation_duration: Some(Duration::from_secs(0)),
@@ -659,6 +688,8 @@ impl AirDataReference {
 
         self.mach.set_value(simulator_data.mach, ssm);
 
+        self.alpha.set_value(context.alpha(), ssm);
+
         if self.outputs_temperatures {
             self.total_air_temperature
                 .set_value(simulator_data.total_air_temperature, ssm);
@@ -691,11 +722,41 @@ impl AirDataReference {
         )
     }
 }
-impl TrueAirspeedSource for AirDataReference {
-    fn true_airspeed(&self) -> Arinc429Word<Velocity> {
-        Arinc429Word::new(self.true_airspeed.value(), self.true_airspeed.ssm())
+
+impl<T: Copy> From<AdirsData<T>> for Arinc429Word<T> {
+    fn from(data: AdirsData<T>) -> Self {
+        Arinc429Word::new(data.value, data.ssm)
     }
 }
+
+impl TrueAirspeedSource for AirDataReference {
+    fn true_airspeed(&self) -> Arinc429Word<Velocity> {
+        self.true_airspeed.into()
+    }
+}
+
+impl ComputedAirspeedSource for AirDataReference {
+    fn computed_airspeed(&self) -> Arinc429Word<Velocity> {
+        self.computed_airspeed.into()
+    }
+}
+
+impl AlphaSource for AirDataReference {
+    fn alpha(&self) -> Arinc429Word<Angle> {
+        self.alpha.into()
+    }
+}
+
+impl AirDataSource for AirDataInertialReferenceUnit {
+    fn computed_airspeed(&self) -> Arinc429Word<Velocity> {
+        self.computed_airspeed()
+    }
+
+    fn alpha(&self) -> Arinc429Word<Angle> {
+        self.alpha()
+    }
+}
+
 impl SimulationElement for AirDataReference {
     fn write(&self, writer: &mut SimulatorWriter) {
         self.altitude.write_to(writer);
