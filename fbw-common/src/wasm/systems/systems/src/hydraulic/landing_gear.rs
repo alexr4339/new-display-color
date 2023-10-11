@@ -1,13 +1,9 @@
 use crate::{
     failures::{Failure, FailureType},
-    landing_gear::GearSystemSensors,
-    shared::{
-        random_from_range, ElectricalBusType, GearActuatorId, GearWheel, LgciuGearControl, LgciuId,
-        ProximityDetectorId, SectionPressure,
-    },
+    shared::{random_from_range, GearActuatorId, LgciuGearControl, LgciuId, ProximityDetectorId},
     simulation::{
-        InitContext, SimulationElement, SimulationElementVisitor, SimulatorWriter, UpdateContext,
-        VariableIdentifier, Write,
+        InitContext, Read, SimulationElement, SimulationElementVisitor, SimulatorReader,
+        UpdateContext, VariableIdentifier,
     },
 };
 
@@ -17,307 +13,9 @@ use super::{
         Actuator, ElectroHydrostaticPowered, HydraulicAssemblyController,
         HydraulicLinearActuatorAssembly, HydraulicLocking, LinearActuatorMode,
     },
-    HydraulicValve, HydraulicValveType,
 };
 
 use uom::si::{f64::*, pressure::psi, ratio::ratio};
-
-pub trait GearGravityExtension {
-    fn extension_handle_number_of_turns(&self) -> u8;
-}
-
-pub struct HydraulicGearSystem {
-    door_center_position_id: VariableIdentifier,
-    door_center_gear_slaved_position_id: VariableIdentifier,
-
-    door_left_position_id: VariableIdentifier,
-    door_right_position_id: VariableIdentifier,
-
-    gear_center_position_id: VariableIdentifier,
-    gear_left_position_id: VariableIdentifier,
-    gear_right_position_id: VariableIdentifier,
-
-    hydraulic_supply: GearSystemHydraulicSupply,
-
-    nose_door_assembly: GearSystemComponentAssembly,
-    left_door_assembly: GearSystemComponentAssembly,
-    right_door_assembly: GearSystemComponentAssembly,
-
-    nose_gear_assembly: GearSystemComponentAssembly,
-    left_gear_assembly: GearSystemComponentAssembly,
-    right_gear_assembly: GearSystemComponentAssembly,
-}
-impl HydraulicGearSystem {
-    pub fn new(
-        context: &mut InitContext,
-        nose_door: HydraulicLinearActuatorAssembly<1>,
-        left_door: HydraulicLinearActuatorAssembly<1>,
-        right_door: HydraulicLinearActuatorAssembly<1>,
-        nose_gear: HydraulicLinearActuatorAssembly<1>,
-        left_gear: HydraulicLinearActuatorAssembly<1>,
-        right_gear: HydraulicLinearActuatorAssembly<1>,
-        gear_door_left_aerodynamic: AerodynamicModel,
-        gear_door_right_aerodynamic: AerodynamicModel,
-        gear_door_nose_aerodynamic: AerodynamicModel,
-        gear_left_aerodynamic: AerodynamicModel,
-        gear_right_aerodynamic: AerodynamicModel,
-        gear_nose_aerodynamic: AerodynamicModel,
-    ) -> Self {
-        Self {
-            door_center_position_id: context.get_identifier("GEAR_DOOR_CENTER_POSITION".to_owned()),
-            door_center_gear_slaved_position_id: context
-                .get_identifier("GEAR_CENTER_SMALL_POSITION".to_owned()),
-
-            door_left_position_id: context.get_identifier("GEAR_DOOR_LEFT_POSITION".to_owned()),
-            door_right_position_id: context.get_identifier("GEAR_DOOR_RIGHT_POSITION".to_owned()),
-
-            gear_center_position_id: context.get_identifier("GEAR_CENTER_POSITION".to_owned()),
-            gear_left_position_id: context.get_identifier("GEAR_LEFT_POSITION".to_owned()),
-            gear_right_position_id: context.get_identifier("GEAR_RIGHT_POSITION".to_owned()),
-
-            hydraulic_supply: GearSystemHydraulicSupply::new(),
-
-            nose_door_assembly: GearSystemComponentAssembly::new(
-                GearActuatorId::GearDoorNose,
-                false,
-                nose_door,
-                false,
-                [
-                    ProximityDetectorId::UplockDoorNose1,
-                    ProximityDetectorId::UplockDoorNose2,
-                ],
-                [
-                    ProximityDetectorId::DownlockDoorNose1,
-                    ProximityDetectorId::DownlockDoorNose2,
-                ],
-                gear_door_nose_aerodynamic,
-            ),
-            left_door_assembly: GearSystemComponentAssembly::new(
-                GearActuatorId::GearDoorLeft,
-                false,
-                left_door,
-                false,
-                [
-                    ProximityDetectorId::UplockDoorLeft1,
-                    ProximityDetectorId::UplockDoorLeft2,
-                ],
-                [
-                    ProximityDetectorId::DownlockDoorLeft1,
-                    ProximityDetectorId::DownlockDoorLeft2,
-                ],
-                gear_door_left_aerodynamic,
-            ),
-            right_door_assembly: GearSystemComponentAssembly::new(
-                GearActuatorId::GearDoorRight,
-                false,
-                right_door,
-                false,
-                [
-                    ProximityDetectorId::UplockDoorRight1,
-                    ProximityDetectorId::UplockDoorRight2,
-                ],
-                [
-                    ProximityDetectorId::DownlockDoorRight1,
-                    ProximityDetectorId::DownlockDoorRight2,
-                ],
-                gear_door_right_aerodynamic,
-            ),
-
-            // Nose gear has pull to retract system while main gears have push to retract
-            nose_gear_assembly: GearSystemComponentAssembly::new(
-                GearActuatorId::GearNose,
-                false,
-                nose_gear,
-                true,
-                [
-                    ProximityDetectorId::UplockGearNose1,
-                    ProximityDetectorId::UplockGearNose2,
-                ],
-                [
-                    ProximityDetectorId::DownlockGearNose1,
-                    ProximityDetectorId::DownlockGearNose2,
-                ],
-                gear_nose_aerodynamic,
-            ),
-            left_gear_assembly: GearSystemComponentAssembly::new(
-                GearActuatorId::GearLeft,
-                true,
-                left_gear,
-                true,
-                [
-                    ProximityDetectorId::UplockGearLeft1,
-                    ProximityDetectorId::UplockGearLeft2,
-                ],
-                [
-                    ProximityDetectorId::DownlockGearLeft1,
-                    ProximityDetectorId::DownlockGearLeft2,
-                ],
-                gear_left_aerodynamic,
-            ),
-            right_gear_assembly: GearSystemComponentAssembly::new(
-                GearActuatorId::GearRight,
-                true,
-                right_gear,
-                true,
-                [
-                    ProximityDetectorId::UplockGearRight1,
-                    ProximityDetectorId::UplockGearRight2,
-                ],
-                [
-                    ProximityDetectorId::DownlockGearRight1,
-                    ProximityDetectorId::DownlockGearRight2,
-                ],
-                gear_right_aerodynamic,
-            ),
-        }
-    }
-
-    pub fn update(
-        &mut self,
-        context: &UpdateContext,
-        valves_controller: &impl GearSystemController,
-        lgciu_controller: &impl LgciuGearControl,
-        main_hydraulic_circuit: &impl SectionPressure,
-    ) {
-        self.hydraulic_supply.update(
-            context,
-            valves_controller,
-            lgciu_controller,
-            main_hydraulic_circuit.pressure_downstream_priority_valve(),
-        );
-
-        let current_pressure = self.hydraulic_supply.gear_system_manifold_pressure();
-
-        self.nose_door_assembly.update(
-            context,
-            lgciu_controller,
-            valves_controller,
-            current_pressure,
-        );
-        self.left_door_assembly.update(
-            context,
-            lgciu_controller,
-            valves_controller,
-            current_pressure,
-        );
-        self.right_door_assembly.update(
-            context,
-            lgciu_controller,
-            valves_controller,
-            current_pressure,
-        );
-
-        self.nose_gear_assembly.update(
-            context,
-            lgciu_controller,
-            valves_controller,
-            current_pressure,
-        );
-        self.left_gear_assembly.update(
-            context,
-            lgciu_controller,
-            valves_controller,
-            current_pressure,
-        );
-        self.right_gear_assembly.update(
-            context,
-            lgciu_controller,
-            valves_controller,
-            current_pressure,
-        );
-    }
-
-    pub fn all_actuators(&mut self) -> [&mut impl Actuator; 6] {
-        [
-            self.nose_door_assembly.actuator(),
-            self.left_door_assembly.actuator(),
-            self.right_door_assembly.actuator(),
-            self.nose_gear_assembly.actuator(),
-            self.left_gear_assembly.actuator(),
-            self.right_gear_assembly.actuator(),
-        ]
-    }
-}
-impl GearSystemSensors for HydraulicGearSystem {
-    fn is_wheel_id_up_and_locked(&self, wheel_id: GearWheel, lgciu_id: LgciuId) -> bool {
-        match wheel_id {
-            GearWheel::NOSE => self.nose_gear_assembly.is_sensor_uplock(lgciu_id),
-            GearWheel::LEFT => self.left_gear_assembly.is_sensor_uplock(lgciu_id),
-            GearWheel::RIGHT => self.right_gear_assembly.is_sensor_uplock(lgciu_id),
-        }
-    }
-
-    fn is_wheel_id_down_and_locked(&self, wheel_id: GearWheel, lgciu_id: LgciuId) -> bool {
-        match wheel_id {
-            GearWheel::NOSE => self.nose_gear_assembly.is_sensor_fully_opened(lgciu_id),
-            GearWheel::LEFT => self.left_gear_assembly.is_sensor_fully_opened(lgciu_id),
-            GearWheel::RIGHT => self.right_gear_assembly.is_sensor_fully_opened(lgciu_id),
-        }
-    }
-
-    fn is_door_id_up_and_locked(&self, wheel_id: GearWheel, lgciu_id: LgciuId) -> bool {
-        match wheel_id {
-            GearWheel::NOSE => self.nose_door_assembly.is_sensor_uplock(lgciu_id),
-            GearWheel::LEFT => self.left_door_assembly.is_sensor_uplock(lgciu_id),
-            GearWheel::RIGHT => self.right_door_assembly.is_sensor_uplock(lgciu_id),
-        }
-    }
-
-    fn is_door_id_down_and_locked(&self, wheel_id: GearWheel, lgciu_id: LgciuId) -> bool {
-        match wheel_id {
-            GearWheel::NOSE => self.nose_door_assembly.is_sensor_fully_opened(lgciu_id),
-            GearWheel::LEFT => self.left_door_assembly.is_sensor_fully_opened(lgciu_id),
-            GearWheel::RIGHT => self.right_door_assembly.is_sensor_fully_opened(lgciu_id),
-        }
-    }
-}
-impl SimulationElement for HydraulicGearSystem {
-    fn accept<T: SimulationElementVisitor>(&mut self, visitor: &mut T) {
-        self.hydraulic_supply.accept(visitor);
-        self.nose_gear_assembly.accept(visitor);
-        self.left_gear_assembly.accept(visitor);
-        self.right_gear_assembly.accept(visitor);
-
-        self.nose_door_assembly.accept(visitor);
-        self.left_door_assembly.accept(visitor);
-        self.right_door_assembly.accept(visitor);
-
-        visitor.visit(self);
-    }
-
-    fn write(&self, writer: &mut SimulatorWriter) {
-        writer.write(
-            &self.door_center_position_id,
-            self.nose_door_assembly.position_normalized(),
-        );
-        writer.write(
-            &self.door_center_gear_slaved_position_id,
-            self.nose_gear_assembly.position_normalized(),
-        );
-
-        writer.write(
-            &self.door_left_position_id,
-            self.left_door_assembly.position_normalized(),
-        );
-        writer.write(
-            &self.door_right_position_id,
-            self.right_door_assembly.position_normalized(),
-        );
-
-        writer.write(
-            &self.gear_center_position_id,
-            self.nose_gear_assembly.position_normalized(),
-        );
-        writer.write(
-            &self.gear_left_position_id,
-            self.left_gear_assembly.position_normalized(),
-        );
-        writer.write(
-            &self.gear_right_position_id,
-            self.right_gear_assembly.position_normalized(),
-        );
-    }
-}
 
 pub trait GearSystemController {
     fn safety_valve_should_open(&self) -> bool;
@@ -327,66 +25,38 @@ pub trait GearSystemController {
     fn gears_uplocks_should_mechanically_unlock(&self) -> bool;
 }
 
-struct GearSystemHydraulicSupply {
-    safety_valve: HydraulicValve,
-    cutoff_valve: HydraulicValve,
-    gear_and_door_selector_valve: HydraulicValve,
+pub struct GearSystemShockAbsorber {
+    shock_absorber_position_id: VariableIdentifier,
+    shock_absorber_position: Ratio,
 }
-impl GearSystemHydraulicSupply {
-    fn new() -> Self {
+impl GearSystemShockAbsorber {
+    const COMPRESSION_THRESHOLD_FOR_WEIGHT_ON_WHEELS_RATIO: f64 = 0.02;
+
+    pub fn new(context: &mut InitContext, id: GearActuatorId) -> Self {
+        let contact_point_id = match id {
+            GearActuatorId::GearNose => 0,
+            GearActuatorId::GearLeft => 1,
+            GearActuatorId::GearRight => 2,
+            GearActuatorId::GearDoorLeft
+            | GearActuatorId::GearDoorRight
+            | GearActuatorId::GearDoorNose => panic!("Gear doors don't have shock absorbers"),
+        };
+
         Self {
-            safety_valve: HydraulicValve::new(
-                HydraulicValveType::ClosedWhenOff,
-                Some(vec![
-                    ElectricalBusType::DirectCurrentEssential,
-                    ElectricalBusType::DirectCurrentGndFltService,
-                ]),
-            ),
-            cutoff_valve: HydraulicValve::new(HydraulicValveType::Mechanical, None),
-            gear_and_door_selector_valve: HydraulicValve::new(
-                HydraulicValveType::ClosedWhenOff,
-                Some(vec![
-                    ElectricalBusType::DirectCurrentEssential,
-                    ElectricalBusType::DirectCurrentGndFltService,
-                ]),
-            ),
+            shock_absorber_position_id: context
+                .get_identifier(format!("CONTACT POINT COMPRESSION:{}", contact_point_id)),
+            shock_absorber_position: Ratio::default(),
         }
     }
 
-    fn update(
-        &mut self,
-        context: &UpdateContext,
-        valves_controller: &impl GearSystemController,
-        gear_controller: &impl LgciuGearControl,
-        main_hydraulic_circuit_pressure: Pressure,
-    ) {
-        self.safety_valve.update(
-            context,
-            valves_controller.safety_valve_should_open(),
-            main_hydraulic_circuit_pressure,
-        );
-        self.cutoff_valve.update(
-            context,
-            valves_controller.shut_off_valve_should_open(),
-            self.safety_valve.pressure_output(),
-        );
-        self.gear_and_door_selector_valve.update(
-            context,
-            gear_controller.control_active(),
-            self.cutoff_valve.pressure_output(),
-        );
-    }
-
-    fn gear_system_manifold_pressure(&self) -> Pressure {
-        self.gear_and_door_selector_valve.pressure_output()
+    pub fn is_shock_absorber_fully_extended(&self, _lgciu_id: LgciuId) -> bool {
+        self.shock_absorber_position
+            < Ratio::new::<ratio>(Self::COMPRESSION_THRESHOLD_FOR_WEIGHT_ON_WHEELS_RATIO)
     }
 }
-impl SimulationElement for GearSystemHydraulicSupply {
-    fn accept<T: SimulationElementVisitor>(&mut self, visitor: &mut T) {
-        self.safety_valve.accept(visitor);
-        self.gear_and_door_selector_valve.accept(visitor);
-
-        visitor.visit(self);
+impl SimulationElement for GearSystemShockAbsorber {
+    fn read(&mut self, reader: &mut SimulatorReader) {
+        self.shock_absorber_position = reader.read(&self.shock_absorber_position_id);
     }
 }
 
@@ -412,7 +82,7 @@ impl From<GearActuatorId> for GearSysComponentId {
     }
 }
 
-struct GearSystemComponentAssembly {
+pub struct GearSystemComponentAssembly {
     component_id: GearSysComponentId,
     is_inverted_control: bool,
     hydraulic_controller: GearSystemComponentHydraulicController,
@@ -431,7 +101,7 @@ impl GearSystemComponentAssembly {
     const UPLOCKED_PROXIMITY_DETECTOR_MOUNTING_POSITION_RATIO: f64 = 0.;
     const UPLOCKED_PROXIMITY_DETECTOR_TRIG_DISTANCE_RATIO: f64 = 0.01;
 
-    fn new(
+    pub fn new(
         id: GearActuatorId,
         is_inverted_control: bool,
         hydraulic_assembly: HydraulicLinearActuatorAssembly<1>,
@@ -487,7 +157,7 @@ impl GearSystemComponentAssembly {
         obj
     }
 
-    fn update(
+    pub fn update(
         &mut self,
         context: &UpdateContext,
         gear_system_controller: &impl LgciuGearControl,
@@ -559,7 +229,7 @@ impl GearSystemComponentAssembly {
         );
     }
 
-    fn position_normalized(&self) -> Ratio {
+    pub fn position_normalized(&self) -> Ratio {
         if !self.is_inverted_control {
             self.hydraulic_assembly.position_normalized()
         } else {
@@ -567,15 +237,15 @@ impl GearSystemComponentAssembly {
         }
     }
 
-    fn actuator(&mut self) -> &mut impl Actuator {
+    pub fn actuator(&mut self) -> &mut impl Actuator {
         self.hydraulic_assembly.actuator(0)
     }
 
-    fn is_sensor_uplock(&self, lgciu_id: LgciuId) -> bool {
+    pub fn is_sensor_uplock(&self, lgciu_id: LgciuId) -> bool {
         self.uplock_proximity_detectors[lgciu_id as usize].proximity_detected()
     }
 
-    fn is_sensor_fully_opened(&self, lgciu_id: LgciuId) -> bool {
+    pub fn is_sensor_fully_opened(&self, lgciu_id: LgciuId) -> bool {
         self.fully_opened_proximity_detectors[lgciu_id as usize].proximity_detected()
     }
 
@@ -817,28 +487,21 @@ impl SimulationElement for ProximityDetector {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
 
     use nalgebra::Vector3;
 
     use std::time::Duration;
-    use uom::si::{
-        angle::degree, electric_potential::volt, length::meter, mass::kilogram,
-        volume_rate::gallon_per_second,
-    };
+    use uom::si::{angle::degree, length::meter, mass::kilogram, volume_rate::gallon_per_second};
 
     use crate::hydraulic::linear_actuator::{
         BoundedLinearLength, LinearActuatedRigidBodyOnHingeAxis, LinearActuator,
     };
-    use crate::shared::{update_iterator::MaxStepLoop, ElectricalBusType, PotentialOrigin};
+    use crate::shared::update_iterator::MaxStepLoop;
 
     use crate::simulation::test::{SimulationTestBed, TestBed};
     use crate::simulation::{Aircraft, SimulationElement, UpdateContext};
-
-    use crate::electrical::test::TestElectricitySource;
-    use crate::electrical::ElectricalBus;
-    use crate::electrical::Electricity;
 
     #[derive(Default)]
     struct TestGearValvesController {
@@ -846,31 +509,10 @@ mod tests {
         shut_off_valve_should_open: bool,
     }
     impl TestGearValvesController {
-        fn with_safety_and_shutoff_opened() -> Self {
+        pub fn with_safety_and_shutoff_opened() -> Self {
             Self {
                 safety_valve_should_open: true,
                 shut_off_valve_should_open: true,
-            }
-        }
-
-        fn with_safety_opened_shut_off_closed() -> Self {
-            Self {
-                safety_valve_should_open: true,
-                shut_off_valve_should_open: false,
-            }
-        }
-
-        fn with_safety_closed_shut_off_opened() -> Self {
-            Self {
-                safety_valve_should_open: false,
-                shut_off_valve_should_open: true,
-            }
-        }
-
-        fn with_all_valve_closed() -> Self {
-            Self {
-                safety_valve_should_open: false,
-                shut_off_valve_should_open: false,
             }
         }
     }
@@ -902,19 +544,11 @@ mod tests {
         control_active: bool,
     }
     impl TestGearSystemController {
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self {
                 open_door_request: false,
                 extend_gear_request: true,
                 control_active: true,
-            }
-        }
-
-        fn without_active_control() -> Self {
-            Self {
-                open_door_request: false,
-                extend_gear_request: true,
-                control_active: false,
             }
         }
 
@@ -937,81 +571,6 @@ mod tests {
 
         fn control_active(&self) -> bool {
             self.control_active
-        }
-    }
-
-    struct TestHydraulicManifoldAircraft {
-        hyd_manifold: GearSystemHydraulicSupply,
-        main_hydraulic_pressure: Pressure,
-
-        valves_controller: TestGearValvesController,
-        gear_controller: TestGearSystemController,
-
-        powered_source_dc: TestElectricitySource,
-        dc_ess_bus: ElectricalBus,
-        is_dc_ess_powered: bool,
-    }
-    impl TestHydraulicManifoldAircraft {
-        fn new(
-            context: &mut InitContext,
-            valves_controller: TestGearValvesController,
-            gear_controller: TestGearSystemController,
-        ) -> Self {
-            Self {
-                hyd_manifold: GearSystemHydraulicSupply::new(),
-                main_hydraulic_pressure: Pressure::default(),
-                valves_controller,
-                gear_controller,
-                powered_source_dc: TestElectricitySource::powered(
-                    context,
-                    PotentialOrigin::EngineGenerator(1),
-                ),
-                dc_ess_bus: ElectricalBus::new(context, ElectricalBusType::DirectCurrentEssential),
-                is_dc_ess_powered: true,
-            }
-        }
-
-        fn set_current_pressure(&mut self, current_pressure: Pressure) {
-            self.main_hydraulic_pressure = current_pressure;
-        }
-
-        fn set_dc_power(&mut self, is_powered: bool) {
-            self.is_dc_ess_powered = is_powered;
-        }
-
-        fn gear_system_manifold_pressure(&self) -> Pressure {
-            self.hyd_manifold.gear_system_manifold_pressure()
-        }
-    }
-    impl Aircraft for TestHydraulicManifoldAircraft {
-        fn update_before_power_distribution(
-            &mut self,
-            _: &UpdateContext,
-            electricity: &mut Electricity,
-        ) {
-            self.powered_source_dc
-                .power_with_potential(ElectricPotential::new::<volt>(28.));
-            electricity.supplied_by(&self.powered_source_dc);
-
-            if self.is_dc_ess_powered {
-                electricity.flow(&self.powered_source_dc, &self.dc_ess_bus);
-            }
-        }
-
-        fn update_after_power_distribution(&mut self, context: &UpdateContext) {
-            self.hyd_manifold.update(
-                context,
-                &self.valves_controller,
-                &self.gear_controller,
-                self.main_hydraulic_pressure,
-            );
-        }
-    }
-    impl SimulationElement for TestHydraulicManifoldAircraft {
-        fn accept<T: SimulationElementVisitor>(&mut self, visitor: &mut T) {
-            self.hyd_manifold.accept(visitor);
-
-            visitor.visit(self);
         }
     }
 
@@ -1193,107 +752,6 @@ mod tests {
 
         test_bed.command_element(|e| e.update(Ratio::new::<ratio>(0.65)));
         assert!(!test_bed.query_element(|e| e.proximity_detected()));
-    }
-
-    #[test]
-    fn hydraulic_manifold_receives_pressure_with_all_valves_opened() {
-        let mut test_bed = SimulationTestBed::new(|context| {
-            TestHydraulicManifoldAircraft::new(
-                context,
-                TestGearValvesController::with_safety_and_shutoff_opened(),
-                TestGearSystemController::new(),
-            )
-        });
-
-        test_bed.command(|a| a.set_current_pressure(Pressure::new::<psi>(3000.)));
-
-        test_bed.run_with_delta(Duration::from_millis(100));
-
-        assert!(
-            test_bed.query(|a| a.gear_system_manifold_pressure()) > Pressure::new::<psi>(2500.)
-        );
-    }
-
-    #[test]
-    fn hydraulic_manifold_output_has_no_pressure_with_power_off() {
-        let mut test_bed = SimulationTestBed::new(|context| {
-            TestHydraulicManifoldAircraft::new(
-                context,
-                TestGearValvesController::with_safety_and_shutoff_opened(),
-                TestGearSystemController::new(),
-            )
-        });
-
-        test_bed.command(|a| a.set_current_pressure(Pressure::new::<psi>(3000.)));
-        test_bed.command(|a| a.set_dc_power(false));
-
-        test_bed.run_with_delta(Duration::from_millis(100));
-
-        assert!(test_bed.query(|a| a.gear_system_manifold_pressure()) < Pressure::new::<psi>(200.));
-    }
-
-    #[test]
-    fn hydraulic_manifold_do_not_receive_pressure_with_shut_off_valve_closed() {
-        let mut test_bed = SimulationTestBed::new(|context| {
-            TestHydraulicManifoldAircraft::new(
-                context,
-                TestGearValvesController::with_safety_opened_shut_off_closed(),
-                TestGearSystemController::new(),
-            )
-        });
-        test_bed.command(|a| a.set_current_pressure(Pressure::new::<psi>(3000.)));
-
-        test_bed.run_with_delta(Duration::from_millis(100));
-
-        assert!(test_bed.query(|e| e.gear_system_manifold_pressure()) < Pressure::new::<psi>(100.));
-    }
-
-    #[test]
-    fn hydraulic_manifold_do_not_receive_pressure_with_safety_valve_closed() {
-        let mut test_bed = SimulationTestBed::new(|context| {
-            TestHydraulicManifoldAircraft::new(
-                context,
-                TestGearValvesController::with_safety_closed_shut_off_opened(),
-                TestGearSystemController::new(),
-            )
-        });
-        test_bed.command(|a| a.set_current_pressure(Pressure::new::<psi>(3000.)));
-
-        test_bed.run_with_delta(Duration::from_millis(100));
-
-        assert!(test_bed.query(|e| e.gear_system_manifold_pressure()) < Pressure::new::<psi>(100.));
-    }
-
-    #[test]
-    fn hydraulic_manifold_do_not_receive_pressure_with_all_valves_closed() {
-        let mut test_bed = SimulationTestBed::new(|context| {
-            TestHydraulicManifoldAircraft::new(
-                context,
-                TestGearValvesController::with_all_valve_closed(),
-                TestGearSystemController::new(),
-            )
-        });
-        test_bed.command(|a| a.set_current_pressure(Pressure::new::<psi>(3000.)));
-
-        test_bed.run_with_delta(Duration::from_millis(100));
-
-        assert!(test_bed.query(|e| e.gear_system_manifold_pressure()) < Pressure::new::<psi>(100.));
-    }
-
-    #[test]
-    fn hydraulic_manifold_do_not_receive_pressure_with_all_valves_opened_but_control_not_active() {
-        let mut test_bed = SimulationTestBed::new(|context| {
-            TestHydraulicManifoldAircraft::new(
-                context,
-                TestGearValvesController::with_safety_and_shutoff_opened(),
-                TestGearSystemController::without_active_control(),
-            )
-        });
-        test_bed.command(|a| a.set_current_pressure(Pressure::new::<psi>(3000.)));
-
-        test_bed.run_with_delta(Duration::from_millis(100));
-
-        assert!(test_bed.query(|e| e.gear_system_manifold_pressure()) < Pressure::new::<psi>(100.));
     }
 
     #[test]

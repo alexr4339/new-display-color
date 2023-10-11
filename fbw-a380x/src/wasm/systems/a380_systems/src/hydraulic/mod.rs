@@ -27,7 +27,7 @@ use systems::{
         },
         cargo_doors::{CargoDoor, HydraulicDoorController},
         flap_slat::FlapSlatAssembly,
-        landing_gear::{GearGravityExtension, GearSystemController, HydraulicGearSystem},
+        landing_gear::GearSystemController,
         linear_actuator::{
             Actuator, BoundedLinearLength, ElectroHydrostaticActuatorType,
             ElectroHydrostaticBackup, ElectroHydrostaticPowered, HydraulicAssemblyController,
@@ -47,7 +47,7 @@ use systems::{
         HydraulicCircuitController, HydraulicPressureSensors, ManualPump, PressureSwitch,
         PressureSwitchType, PriorityValve, PumpController, Reservoir,
     },
-    landing_gear::{GearSystemSensors, LandingGearControlInterfaceUnitSet, TiltingGear},
+    landing_gear::TiltingGear,
     overhead::{AutoOffFaultPushButton, AutoOnFaultPushButton},
     shared::{
         interpolation, random_from_range, update_iterator::MaxStepLoop, AdirsDiscreteOutputs,
@@ -62,12 +62,18 @@ use systems::{
     },
 };
 
+use crate::{
+    hydraulic::landing_gear::{GearGravityExtension, HydraulicGearSystem},
+    landing_gear::{GearSystemSensors, LandingGearControlInterfaceUnitSet},
+};
+
 use std::fmt::Debug;
 
 mod flaps_computer;
 use flaps_computer::SlatFlapComplex;
 mod engine_pump_disc;
 use engine_pump_disc::EnginePumpDisconnectionClutch;
+mod landing_gear;
 
 #[cfg(test)]
 use systems::hydraulic::PressureSwitchState;
@@ -6631,13 +6637,14 @@ mod tests {
             engine::{trent_engine::TrentEngine, EngineFireOverheadPanel},
             failures::FailureType,
             hydraulic::cargo_doors::{DoorControlState, HydraulicDoorController},
-            landing_gear::{GearSystemState, LandingGear, LandingGearControlInterfaceUnitSet},
             shared::{EmergencyElectricalState, LgciuId, PotentialOrigin},
             simulation::{
                 test::{ReadByName, SimulationTestBed, TestBed, WriteByName},
                 Aircraft, InitContext,
             },
         };
+
+        use crate::landing_gear::{GearSystemState, LandingGearControlInterfaceUnitSet};
 
         use uom::si::{
             angle::{degree, radian},
@@ -6743,7 +6750,6 @@ mod tests {
             autobrake_panel: AutobrakePanel,
             engine_fire_overhead: EngineFireOverheadPanel<4>,
 
-            landing_gear: LandingGear,
             lgcius: LandingGearControlInterfaceUnitSet,
             adirus: A380TestAdirus,
             electrical: A380TestElectrical,
@@ -6791,7 +6797,6 @@ mod tests {
                     overhead: A380HydraulicOverheadPanel::new(context),
                     autobrake_panel: AutobrakePanel::new(context),
                     engine_fire_overhead: EngineFireOverheadPanel::new(context),
-                    landing_gear: LandingGear::new(context),
                     lgcius: LandingGearControlInterfaceUnitSet::new(
                         context,
                         ElectricalBusType::DirectCurrentEssential,
@@ -7048,7 +7053,6 @@ mod tests {
 
                 self.lgcius.update(
                     context,
-                    &self.landing_gear,
                     &self.hydraulics.gear_system,
                     self.ext_pwr.output_potential().is_powered(),
                 );
@@ -7078,7 +7082,6 @@ mod tests {
                 self.engine_2.accept(visitor);
                 self.engine_3.accept(visitor);
                 self.engine_4.accept(visitor);
-                self.landing_gear.accept(visitor);
                 self.lgcius.accept(visitor);
                 self.hydraulics.accept(visitor);
                 self.autobrake_panel.accept(visitor);
