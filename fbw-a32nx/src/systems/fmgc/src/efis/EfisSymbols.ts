@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 // Copyright (c) 2021-2023 FlyByWire Simulations
 // SPDX-License-Identifier: GPL-3.0
 
@@ -18,6 +19,7 @@ import {
   EfisSide,
   Arinc429SignStatusMatrix,
   Arinc429OutputWord,
+  HUDSyntheticRunway,
 } from '@flybywiresim/fbw-sdk';
 
 import { Coordinates } from '@fmgc/flightplanning/data/geo';
@@ -189,6 +191,97 @@ export class EfisSymbols<T extends number> {
 
     const hasSuitableRunway = (airport: Airport): boolean =>
       airport.longestRunwayLength >= 1500 && airport.longestRunwaySurfaceType === RunwaySurfaceType.Hard;
+
+    // 	Phiφ is latitude, Lambdaλ is longitude, θ is the bearing (clockwise from north), δ is the angular distance d/R; d being the distance travelled, R the earth’s radius
+    //  (all angles in radians)
+
+    function DestFromPointCoordsBearingDistance(brng: number, d: number, Lat1: number, Lon1: number): LatLongAlt {
+      const rBrng = (brng / 180) * Math.PI;
+      const rLat1 = (Lat1 / 180) * Math.PI;
+      const rLon1 = (Lon1 / 180) * Math.PI;
+      const R = 6371;
+
+      const rLat2 = Math.asin(Math.sin(rLat1) * Math.cos(d / R) + Math.cos(rLat1) * Math.sin(d / R) * Math.cos(rBrng));
+      const rLon2 =
+        rLon1 +
+        Math.atan2(
+          Math.sin(rBrng) * Math.sin(d / R) * Math.cos(rLat1),
+          Math.cos(d / R) - Math.sin(rLat1) * Math.sin(rLat2),
+        );
+
+      const dLat2 = (rLat2 / Math.PI) * 180;
+      const dLon2 = (rLon2 / Math.PI) * 180;
+
+      return new LatLongAlt(dLat2, dLon2);
+    }
+
+    const activeFp = this.flightPlanService.active;
+    // FIXME dirty hack on type check
+    const runway = activeFp.destinationRunway;
+    if (activeFp.destinationRunway !== undefined) {
+
+
+
+      const endCoordinates = DestFromPointCoordsBearingDistance(
+        runway.bearing,
+        runway.length,
+        runway.startLocation.lat,
+        runway.startLocation.long,
+      );
+      if (runway) {
+        const cornerCoor: LatLongAlt[] = [];
+        const p1 = DestFromPointCoordsBearingDistance(
+          runway.bearing - 90,
+          runway.width / 2 / 1852,
+          endCoordinates.lat,
+          endCoordinates.long,
+        );
+        p1.alt = runway.thresholdCrossingHeight - runway.length * 3.281 * Math.tan((runway.gradient / 180) * Math.PI); //in feet
+        cornerCoor.push(p1);
+
+        const p2 = DestFromPointCoordsBearingDistance(
+          runway.bearing + 90,
+          runway.width / 2 / 1852,
+          endCoordinates.lat,
+          endCoordinates.long,
+        );
+        p2.alt = runway.thresholdCrossingHeight - runway.length * 3.281 * Math.tan((runway.gradient / 180) * Math.PI); //in feet
+        cornerCoor.push(p2);
+
+        const p3 = Avionics.Utils.bearingDistanceToCoordinates(
+          runway.bearing + 90,
+          runway.width / 2 / 1852,
+          runway.thresholdLocation.lat,
+          runway.thresholdLocation.long,
+        );
+        p3.alt = runway.thresholdCrossingHeight; //in feet
+        cornerCoor.push(p3);
+        const p4 = Avionics.Utils.bearingDistanceToCoordinates(
+          runway.bearing - 90,
+          runway.width / 2 / 1852, //1852: nautical miles to meters
+          runway.thresholdLocation.lat,
+          runway.thresholdLocation.long,
+        );
+        p4.alt = runway.thresholdCrossingHeight; //in feet
+        cornerCoor.push(p4);
+
+        const HUDSymbol: HUDSyntheticRunway = {
+          gradient: runway.gradient,
+          location: runway.location,
+          direction: (runway as any).bearing,
+          startLocation: runway.startLocation,
+          thresholdLocation: runway.thresholdLocation,
+          thresholdCrossingHeight: runway.thresholdCrossingHeight,
+          latitude: (runway as any).latitude,
+          longitude: (runway as any).longitude,
+          elevation: runway.thresholdCrossingHeight, // in meters
+          length: runway.length,
+          width: (runway as any).width,
+          cornerCoordinates: cornerCoor,
+        };
+        this.syncer.sendEvent('A32NX_EFIS_HUD_SYMBOLS', HUDSymbol);
+      }
+    }
 
     for (const side of EfisSymbols.sides) {
       const range = this.rangeValues[SimVar.GetSimVarValue(`L:A32NX_EFIS_${side}_ND_RANGE`, 'number')];
