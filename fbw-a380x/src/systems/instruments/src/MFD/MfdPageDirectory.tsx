@@ -98,7 +98,7 @@ export function pageForUrl(
     case 'surv/status-switching':
       return <MfdSurvStatusSwitching pageTitle="STATUS & SWITCHING" bus={bus} mfd={mfd} fmcService={fmcService} />;
     case 'fcubkup/afs':
-      return <MfdFcuBkupAfs pageTitle="AFSCP" bus={bus} mfd={mfd} fmcService={fmcService} />;      
+      return <MfdFcuBkupAfs pageTitle="AFSCP" bus={bus} mfd={mfd} fmcService={fmcService} />;
     case 'atccom/connect':
       return <MfdAtccomConnect pageTitle="" bus={bus} mfd={mfd} fmcService={fmcService} />;
 
