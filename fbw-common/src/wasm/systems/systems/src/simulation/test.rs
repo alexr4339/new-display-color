@@ -15,6 +15,7 @@ use uom::si::{
 use crate::{
     electrical::{Electricity, Potential},
     failures::FailureType,
+    shared::InternationalStandardAtmosphere,
 };
 
 use super::{
@@ -103,11 +104,6 @@ pub trait TestBed {
         self.test_bed_mut().set_normal_acceleration(acc);
     }
 
-    fn set_indicated_altitude(&mut self, indicated_altitude: Length) {
-        self.test_bed_mut()
-            .set_indicated_altitude(indicated_altitude);
-    }
-
     fn set_pressure_altitude(&mut self, pressure_altitude: Length) {
         self.test_bed_mut().set_pressure_altitude(pressure_altitude);
     }
@@ -137,6 +133,7 @@ pub trait TestBed {
         self.test_bed_mut().set_ambient_pressure(ambient_pressure);
     }
 
+    #[deprecated(note = "Cannot directly set V/S. It is derived from change in static pressure.")]
     fn set_vertical_speed(&mut self, vertical_speed: Velocity) {
         self.test_bed_mut().set_vertical_speed(vertical_speed);
     }
@@ -255,7 +252,7 @@ impl<T: Aircraft> SimulationTestBed<T> {
         };
 
         test_bed.set_indicated_airspeed(Velocity::new::<knot>(250.));
-        test_bed.set_indicated_altitude(Length::new::<foot>(5000.));
+        test_bed.set_pressure_altitude(Length::new::<foot>(5000.));
         test_bed.set_ambient_temperature(ThermodynamicTemperature::new::<degree_celsius>(0.));
         test_bed.set_ambient_pressure(Pressure::new::<inch_of_mercury>(29.92));
         test_bed.set_vertical_speed(Velocity::new::<foot_per_minute>(0.));
@@ -372,12 +369,10 @@ impl<T: Aircraft> SimulationTestBed<T> {
         self.read_by_name(UpdateContext::INDICATED_AIRSPEED_KEY)
     }
 
-    fn set_indicated_altitude(&mut self, indicated_altitude: Length) {
-        self.write_by_name(UpdateContext::INDICATED_ALTITUDE_KEY, indicated_altitude);
-    }
-
     fn set_pressure_altitude(&mut self, pressure_altitude: Length) {
-        self.write_by_name(UpdateContext::PRESSURE_ALTITUDE_KEY, pressure_altitude);
+        let static_pressure =
+            InternationalStandardAtmosphere::pressure_at_altitude(pressure_altitude);
+        self.set_ambient_pressure(static_pressure);
     }
 
     fn set_ambient_temperature(&mut self, ambient_temperature: ThermodynamicTemperature) {

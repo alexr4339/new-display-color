@@ -16,6 +16,9 @@ import { PseudoFWC } from 'systems-host/systems/FWC/PseudoFWC';
 import { FuelSystemPublisher } from 'instruments/src/MsfsAvionicsCommon/providers/FuelSystemPublisher';
 import { A32NXFcuBusPublisher } from '@shared/publishers/A32NXFcuBusPublisher';
 import { PseudoFwcSimvarPublisher } from 'instruments/src/MsfsAvionicsCommon/providers/PseudoFwcPublisher';
+import { A32NXAdrBusPublisher } from '@shared/publishers/A32NXAdrBusPublisher';
+import { A32NXDisplayManagementPublisher } from '@shared/publishers/A32NXDisplayManagementPublisher';
+import { A32NXElectricalSystemPublisher } from '@shared/publishers/A32NXElectricalSystemPublisher';
 
 class SystemsHost extends BaseInstrument {
   private readonly bus = new EventBus();
@@ -35,6 +38,10 @@ class SystemsHost extends BaseInstrument {
   private readonly stallWarningPublisher = new StallWarningPublisher(this.bus, 0.9);
 
   private readonly a32nxFcuBusPublisher = new A32NXFcuBusPublisher(this.bus);
+  private readonly adrBusPublisher = new A32NXAdrBusPublisher(this.bus);
+  private readonly dmcBusPublisher = new A32NXDisplayManagementPublisher(this.bus);
+  private readonly elecSysPublisher = new A32NXElectricalSystemPublisher(this.bus);
+  private readonly fcuBusPublisher = new A32NXFcuBusPublisher(this.bus);
 
   private readonly pseudoFwcPublisher = new PseudoFwcSimvarPublisher(this.bus);
 
@@ -57,6 +64,10 @@ class SystemsHost extends BaseInstrument {
     this.backplane.addPublisher('PowerPublisher', this.powerSupply);
     this.backplane.addPublisher('stallWarning', this.stallWarningPublisher);
     this.backplane.addPublisher('a32nxFcuBusPublisher', this.a32nxFcuBusPublisher);
+    this.backplane.addPublisher('AdrBus', this.adrBusPublisher);
+    this.backplane.addPublisher('DmcBus', this.dmcBusPublisher);
+    this.backplane.addPublisher('ElecSys', this.elecSysPublisher);
+    this.backplane.addPublisher('FcuBus', this.fcuBusPublisher);
     this.backplane.addPublisher('PseudoFwcPublisher', this.pseudoFwcPublisher);
 
     this.pseudoFwc.init();
