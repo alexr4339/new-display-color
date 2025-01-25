@@ -181,6 +181,7 @@
 1. [A32NX/FMS] Added differentiation between compatible and incompatible approach vias (H4) - @tracernz (Mike)
 1. [A32NX/FMS] Removed insert/erase prompts on approach via page - @tracernz (Mike)
 1. [ND] Fixed alignment of approach message - @tracernz (Mike)
+1. [FMS] Make sure radials of CR/VR legs use the station declination as magvar - @BlueberryKing (BlueberryKing)
 
 ## 0.12.0
 
