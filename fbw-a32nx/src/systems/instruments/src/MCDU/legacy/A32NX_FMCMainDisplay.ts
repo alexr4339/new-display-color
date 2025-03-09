@@ -1516,7 +1516,7 @@ export abstract class FMCMainDisplay implements FmsDataInterface, FmsDisplayInte
       weight = this.zeroFuelWeight + Math.max(0, (vnavPrediction.estimatedFuelOnBoard * 0.4535934) / 1000);
     }
     // if pilot has set approach wind in MCDU we use it, otherwise fall back to current measured wind
-    if (this.perfApprWindSpeed != null && this.perfApprWindHeading != null) {
+    if (this.perfApprWindSpeed !== null && this.perfApprWindHeading !== null) {
       this.approachSpeeds = new NXSpeedsApp(weight, this.perfApprFlaps3, this._towerHeadwind);
     } else {
       this.approachSpeeds = new NXSpeedsApp(weight, this.perfApprFlaps3);
@@ -2034,8 +2034,8 @@ export abstract class FMCMainDisplay implements FmsDataInterface, FmsDisplayInte
       return (
         isFinite(this.perfApprQNH) &&
         isFinite(this.perfApprTemp) &&
-        this.perfApprWindHeading != null &&
-        this.perfApprWindSpeed != null
+        this.perfApprWindHeading !== null &&
+        this.perfApprWindSpeed !== null
       );
     });
   }
@@ -4041,7 +4041,7 @@ export abstract class FMCMainDisplay implements FmsDataInterface, FmsDisplayInte
    */
   private getVAppGsMini() {
     let vAppTarget = this.getVApp();
-    if (this.perfApprWindSpeed !== null && this.perfApprWindHeading != null) {
+    if (this.perfApprWindSpeed !== null && this.perfApprWindHeading !== null) {
       vAppTarget = NXSpeedsUtils.getVtargetGSMini(vAppTarget, NXSpeedsUtils.getHeadWindDiff(this._towerHeadwind));
     }
     return vAppTarget;
@@ -4392,7 +4392,7 @@ export abstract class FMCMainDisplay implements FmsDataInterface, FmsDisplayInte
   }
 
   public updateTowerHeadwind() {
-    if (this.perfApprWindHeading != null && this.perfApprWindSpeed != null) {
+    if (this.perfApprWindHeading !== null && this.perfApprWindSpeed !== null) {
       const activePlan = this.flightPlanService.active;
 
       if (activePlan.destinationRunway) {
@@ -5105,7 +5105,7 @@ export abstract class FMCMainDisplay implements FmsDataInterface, FmsDisplayInte
     const activePlan = this.currFlightPlanService.active;
     const destination = activePlan.destinationAirport;
 
-    if (!destination || !destination.location || this.perfApprWindHeading == null || this.perfApprWindSpeed == null) {
+    if (!destination || !destination.location || this.perfApprWindHeading === null || this.perfApprWindSpeed === null) {
       return null;
     }
 
