@@ -21,7 +21,7 @@ export enum InteractionMode {
   Kccu,
 }
 
-interface InputFieldProps<T, U = T, S = T extends U ? true : false> extends ComponentProps {
+export interface InputFieldProps<T, U = T, S = T extends U ? true : false> extends ComponentProps {
   dataEntryFormat: DataEntryFormat<T, U>;
   /** Renders empty values with orange rectangles */
   mandatory?: Subscribable<boolean>;
