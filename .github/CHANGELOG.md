@@ -178,6 +178,7 @@
 1. [A32NX/FMS] Disallow editing of waypoint ident on the create waypoint page - @tracernz (Mike)
 1. [A380X/MFD] Changed flightplan time header to show correct TIME or UTC - @MrJigs7 (MrJigs.)
 1. [A380X] Fix FO seat switches not being momentary - @heclak (Heclak)
+1. [A380X] Removed duplicate visibility variable whitespace - @rjthom91 (Randy)
 
 ## 0.12.0
 
